@@ -2719,7 +2719,12 @@ int test_clear_page_writeback(struct page *page)
 	int ret;
 
 	memcg = lock_page_memcg(page);
-	lruvec = mem_cgroup_page_lruvec(page, page_pgdat(page));
+#if defined(CONFIG_CONT_PTE_HUGEPAGE) && CONFIG_CONT_PTE_HUGEPAGE_LRU
+	if (ContPteCMAHugePageHead(page))
+		lruvec = mem_cgroup_chp_page_lruvec(page, page_pgdat(page));
+	else
+#endif
+		lruvec = mem_cgroup_page_lruvec(page, page_pgdat(page));
 	if (mapping && mapping_use_writeback_tags(mapping)) {
 		struct inode *inode = mapping->host;
 		struct backing_dev_info *bdi = inode_to_bdi(inode);
@@ -2746,12 +2751,6 @@ int test_clear_page_writeback(struct page *page)
 	} else {
 		ret = TestClearPageWriteback(page);
 	}
-	/*
-	 * NOTE: Page might be free now! Writeback doesn't hold a page
-	 * reference on its own, it relies on truncation to wait for
-	 * the clearing of PG_writeback. The below can only access
-	 * page state that is static across allocation cycles.
-	 */
 	if (ret) {
 		dec_lruvec_state(lruvec, NR_WRITEBACK);
 		dec_zone_page_state(page, NR_ZONE_WRITE_PENDING);
@@ -2817,7 +2816,7 @@ EXPORT_SYMBOL(__test_set_page_writeback);
  */
 void wait_on_page_writeback(struct page *page)
 {
-	if (PageWriteback(page)) {
+	while (PageWriteback(page)) {
 		trace_wait_on_page_writeback(page, page_mapping(page));
 		wait_on_page_bit(page, PG_writeback);
 	}
